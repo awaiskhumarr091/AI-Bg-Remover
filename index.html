@@ -266,6 +266,7 @@
     font-size:17.5px;
   }
 
+
   /* ---------- Upload dropzone ---------- */
   .dropzone{
     max-width:720px;
@@ -401,8 +402,7 @@
   .compare .after-layer{
     position:absolute; inset:0;
     overflow:hidden;
-    width:50%;
-    border-right:2px solid var(--sky);
+    clip-path:inset(0 100% 0 0);
     display:flex; align-items:center; justify-content:center;
     background:
       linear-gradient(45deg,#20233b 25%,transparent 25%) 0 0/24px 24px,
@@ -411,16 +411,38 @@
       linear-gradient(-45deg,transparent 75%,#20233b 75%) 0 0/24px 24px,
       #16182c;
   }
-  .compare .after-layer img{ width:200%; max-width:none; }
-  .compare .after-layer{ width:0%; }
-  .compare.revealed .after-layer{ transition:width 1.1s var(--ease); width:50%; }
+  .compare .after-layer img{ width:100%; height:100%; object-fit:contain; max-height:460px; }
+  .compare.revealed .after-layer{ transition:clip-path 1.1s var(--ease); clip-path:inset(0 50% 0 0); }
+  .compare.dragging .after-layer{ transition:none; }
+
+  .compare.revealed{ cursor:ew-resize; }
 
   .slider-handle{
     position:absolute; top:0; bottom:0; left:50%;
     width:2px; background:var(--sky);
     display:none;
+    transform:translateX(-1px);
+    box-shadow:0 0 14px rgba(56,189,248,0.65);
+    touch-action:none;
+    z-index:5;
   }
-  .compare.revealed .slider-handle{ display:block; }
+  .compare.revealed .slider-handle{ display:block; transition:left 1.1s var(--ease); }
+  .compare.dragging .slider-handle{ transition:none; }
+
+  .slider-grip{
+    position:absolute; top:50%; left:50%;
+    width:44px; height:44px;
+    transform:translate(-50%,-50%);
+    border-radius:50%;
+    background:rgba(15,17,32,0.85);
+    border:1.5px solid rgba(255,255,255,0.5);
+    box-shadow:0 6px 20px -4px rgba(0,0,0,0.6), 0 0 0 4px rgba(56,189,248,0.12);
+    display:flex; align-items:center; justify-content:center;
+    gap:5px;
+    cursor:ew-resize;
+    pointer-events:none;
+  }
+  .slider-grip svg{ width:9px; height:9px; color:#fff; }
 
   .scan-beam{
     position:absolute; inset:0;
@@ -676,7 +698,12 @@
       <div class="after-layer">
         <img id="result-img" alt="Photo after AI background removal, shown on a transparent checkerboard">
       </div>
-      <div class="slider-handle" aria-hidden="true"></div>
+      <div class="slider-handle" id="slider-handle" aria-hidden="true">
+        <div class="slider-grip">
+          <svg viewBox="0 0 24 24" fill="none"><path d="M14 6L8 12L14 18" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <svg viewBox="0 0 24 24" fill="none"><path d="M10 6L16 12L10 18" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+      </div>
       <div class="scan-beam" aria-hidden="true"></div>
     </div>
 
@@ -888,6 +915,7 @@
   const workspace       = document.getElementById("workspace");
   const statusPill      = document.getElementById("status-pill");
   const compareEl       = document.getElementById("compare");
+  const sliderHandle    = document.getElementById("slider-handle");
   const originalImg     = document.getElementById("original-img");
   const resultImg       = document.getElementById("result-img");
 
@@ -1032,6 +1060,7 @@
 
       setTimeout(() => {
         compareEl.classList.remove("processing");
+        setSliderPosition(50);
         compareEl.classList.add("revealed");
         progressWrap.classList.remove("active");
         progressFill.style.width = "0%";
@@ -1049,6 +1078,66 @@
       preActions.classList.remove("hidden");
     });
   }
+
+  /* ---------------------------------------------------------
+     Draggable before/after slider
+  --------------------------------------------------------- */
+  function setSliderPosition(pct){
+    pct = Math.max(0, Math.min(100, pct));
+    compareEl.querySelector(".after-layer").style.clipPath = `inset(0 ${100 - pct}% 0 0)`;
+    sliderHandle.style.left = pct + "%";
+  }
+
+  function pctFromClientX(clientX){
+    const rect = compareEl.getBoundingClientRect();
+    return ((clientX - rect.left) / rect.width) * 100;
+  }
+
+  let isDragging = false;
+
+  function startDrag(clientX){
+    if (!compareEl.classList.contains("revealed")) return;
+    isDragging = true;
+    compareEl.classList.add("dragging");
+    setSliderPosition(pctFromClientX(clientX));
+  }
+  function moveDrag(clientX){
+    if (!isDragging) return;
+    setSliderPosition(pctFromClientX(clientX));
+  }
+  function endDrag(){
+    isDragging = false;
+    compareEl.classList.remove("dragging");
+  }
+
+  // Mouse
+  sliderHandle.addEventListener("mousedown", (e) => { e.preventDefault(); startDrag(e.clientX); });
+  compareEl.addEventListener("mousedown", (e) => {
+    if (!compareEl.classList.contains("revealed")) return;
+    startDrag(e.clientX);
+  });
+  window.addEventListener("mousemove", (e) => moveDrag(e.clientX));
+  window.addEventListener("mouseup", endDrag);
+
+  // Touch
+  sliderHandle.addEventListener("touchstart", (e) => { startDrag(e.touches[0].clientX); }, { passive:true });
+  compareEl.addEventListener("touchstart", (e) => {
+    if (!compareEl.classList.contains("revealed")) return;
+    startDrag(e.touches[0].clientX);
+  }, { passive:true });
+  window.addEventListener("touchmove", (e) => { if (isDragging) moveDrag(e.touches[0].clientX); }, { passive:true });
+  window.addEventListener("touchend", endDrag);
+
+  // Keyboard access: focus the compare area and use arrow keys
+  compareEl.setAttribute("tabindex", "0");
+  compareEl.setAttribute("role", "slider");
+  compareEl.setAttribute("aria-label", "Drag to compare before and after");
+  compareEl.addEventListener("keydown", (e) => {
+    if (!compareEl.classList.contains("revealed")) return;
+    const current = parseFloat(sliderHandle.style.left) || 50;
+    if (e.key === "ArrowLeft"){ setSliderPosition(current - 5); e.preventDefault(); }
+    if (e.key === "ArrowRight"){ setSliderPosition(current + 5); e.preventDefault(); }
+  });
 
   /* ---------------------------------------------------------
      Upload triggers
