@@ -56,7 +56,7 @@
     { "@type": "Question", "name": "Is Cutlyne really free to use?",
       "acceptedAnswer": { "@type": "Answer", "text": "Yes. Every cutout is free, unlimited, and produced without a watermark." } },
     { "@type": "Question", "name": "What image formats does Cutlyne accept?",
-      "acceptedAnswer": { "@type": "Answer", "text": "PNG, JPG, JPEG, and WEBP files up to 4MB." } },
+      "acceptedAnswer": { "@type": "Answer", "text": "PNG, JPG, JPEG, and WEBP files up to 20MB." } },
     { "@type": "Question", "name": "Does Cutlyne keep a copy of my photos?",
       "acceptedAnswer": { "@type": "Answer", "text": "No. Images are processed for the current session only and are never stored on a server." } }
   ]
@@ -805,7 +805,7 @@
 
     <div class="faq-item">
       <button class="faq-q" aria-expanded="false">What image formats can I upload?<span class="plus">+</span></button>
-      <div class="faq-a"><p>PNG, JPG, JPEG, and WEBP files up to 4MB each are supported.</p></div>
+      <div class="faq-a"><p>PNG, JPG, JPEG, and WEBP files up to 20MB each are supported.</p></div>
     </div>
 
     <div class="faq-item">
@@ -989,18 +989,11 @@
     });
 
     if (!response.ok){
-      let message = "The background removal request failed (status " + response.status + ").";
+      let message = "The background removal request failed.";
       try{
         const errJson = await response.json();
         if (errJson.error) message = errJson.error;
-      } catch(e){
-        // Response wasn't JSON — this usually means the request never
-        // reached our function at all (e.g. a 404 because /api/remove-bg
-        // isn't deployed) rather than an error from inside it.
-        if (response.status === 404){
-          message = "The /api/remove-bg endpoint wasn't found (404). Make sure remove-bg.js is deployed at /api/remove-bg on Vercel.";
-        }
-      }
+      } catch(e){ /* response wasn't JSON */ }
       throw new Error(message);
     }
 
