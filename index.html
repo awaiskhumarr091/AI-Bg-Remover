@@ -351,30 +351,6 @@
 
   #file-input{ position:absolute; width:1px; height:1px; opacity:0; pointer-events:none; }
 
-  .api-key-row{
-    margin-top:24px;
-    padding-top:22px;
-    border-top:1px solid rgba(255,255,255,0.08);
-    display:flex; align-items:center; justify-content:center;
-    gap:10px; flex-wrap:wrap;
-    font-size:13px;
-  }
-  .api-key-row label{ color:var(--ink-1); font-family:var(--font-mono); font-size:11.5px; letter-spacing:.03em; }
-  .api-key-row input{
-    background:rgba(255,255,255,0.06);
-    border:1px solid rgba(255,255,255,0.14);
-    border-radius:8px;
-    padding:8px 12px;
-    color:var(--ink-0);
-    font-family:var(--font-mono);
-    font-size:12.5px;
-    width:200px;
-    max-width:60vw;
-  }
-  .api-key-row input::placeholder{ color:var(--ink-2); }
-  .api-key-row a{ color:var(--sky); font-size:12.5px; font-weight:600; }
-  .api-key-row a:hover{ text-decoration:underline; }
-
   /* ---------- Preview / workspace ---------- */
   .workspace{
     display:none;
@@ -678,13 +654,7 @@
 
     <div class="drop-meta">
       <span>Formats: <strong>PNG · JPG · JPEG · WEBP</strong></span>
-      <span>Max size: <strong>20MB</strong></span>
-    </div>
-
-    <div class="api-key-row">
-      <label for="api-key-input">remove.bg API key</label>
-      <input type="password" id="api-key-input" placeholder="Paste your key here" autocomplete="off" spellcheck="false">
-      <a href="https://www.remove.bg/api" target="_blank" rel="noopener">Get a free key</a>
+      <span>Max size: <strong>4MB</strong></span>
     </div>
   </div>
 
@@ -900,7 +870,7 @@
   /* ---------------------------------------------------------
      Config
   --------------------------------------------------------- */
-  const MAX_SIZE_BYTES = 20 * 1024 * 1024; // 20MB
+  const MAX_SIZE_BYTES = 4 * 1024 * 1024; // 4MB — Vercel Hobby function body limit
   const ACCEPTED_TYPES = ["image/png","image/jpeg","image/jpg","image/webp"];
 
   /* ---------------------------------------------------------
@@ -930,20 +900,9 @@
   const processAnotherBtn = document.getElementById("process-another");
   const downloadPngBtn  = document.getElementById("download-png");
   const downloadJpgBtn  = document.getElementById("download-jpg");
-  const apiKeyInput      = document.getElementById("api-key-input");
 
   let currentResultURL = null; // holds the processed image URL for download
   let currentFile = null;      // holds the original File for the API call
-
-  /* ---------------------------------------------------------
-     API key: remembered locally so it doesn't need retyping.
-     The key never leaves this browser except in the direct
-     call to api.remove.bg made below.
-  --------------------------------------------------------- */
-  apiKeyInput.value = localStorage.getItem("cutlyne_removebg_key") || "";
-  apiKeyInput.addEventListener("change", () => {
-    localStorage.setItem("cutlyne_removebg_key", apiKeyInput.value.trim());
-  });
 
   /* ---------------------------------------------------------
      Utility: validation
@@ -974,12 +933,6 @@
     const error = validateFile(file);
     if (error){ showError(error); return; }
 
-    if (!apiKeyInput.value.trim()){
-      showError("Add a remove.bg API key first (field under the upload buttons).");
-      apiKeyInput.focus();
-      return;
-    }
-
     currentFile = file;
     const objectURL = URL.createObjectURL(file);
     originalImg.src = objectURL;
@@ -1004,42 +957,28 @@
 
   /* ---------------------------------------------------------
      removeBackground(file)
-     Calls the remove.bg API directly from the browser and
-     resolves with an object URL for the resulting PNG.
-     remove.bg's own docs demonstrate this exact browser fetch()
-     pattern, so no backend proxy is required — see
-     https://www.remove.bg/api. To swap in a different provider
-     (e.g. Photoroom, or your own model server), replace the
-     body of this function; everything else in the app
-     (progress bar, preview, downloads) stays the same.
+     Sends the image to this site's own /api/remove-bg endpoint
+     (a Vercel serverless function) instead of calling remove.bg
+     directly, so the API key stays private on the server and
+     visitors never need one. See /api/remove-bg.js.
   --------------------------------------------------------- */
   async function removeBackground(file){
-    const apiKey = apiKeyInput.value.trim();
-
     const form = new FormData();
     form.append("image_file", file);
     form.append("size", "auto");
 
-    const response = await fetch("https://api.remove.bg/v1.0/removebg", {
+    const response = await fetch("/api/remove-bg", {
       method: "POST",
-      headers: { "X-Api-Key": apiKey },
       body: form
     });
 
     if (!response.ok){
-      let detail = response.statusText;
+      let message = "The background removal request failed.";
       try{
         const errJson = await response.json();
-        if (errJson.errors && errJson.errors[0]) detail = errJson.errors[0].title;
-      } catch(e){ /* response wasn't JSON, keep statusText */ }
-
-      if (response.status === 403 || response.status === 401){
-        throw new Error("That API key was rejected. Double-check it and try again.");
-      }
-      if (response.status === 402){
-        throw new Error("Your remove.bg account is out of credits.");
-      }
-      throw new Error(detail || "The background removal request failed.");
+        if (errJson.error) message = errJson.error;
+      } catch(e){ /* response wasn't JSON */ }
+      throw new Error(message);
     }
 
     const blob = await response.blob();
