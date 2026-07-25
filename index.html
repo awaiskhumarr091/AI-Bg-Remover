@@ -685,6 +685,8 @@
       <div class="progress-msg" id="progress-msg">Reading pixels…</div>
     </div>
 
+    <p id="workspace-error" class="visible-error" style="display:none;" role="alert"></p>
+
     <div class="work-actions pre-actions" id="pre-actions">
       <button class="btn btn-ghost" id="replace-btn" type="button">Replace Image</button>
       <button class="btn btn-ghost" id="remove-btn" type="button">Remove Image</button>
@@ -900,6 +902,7 @@
   const processAnotherBtn = document.getElementById("process-another");
   const downloadPngBtn  = document.getElementById("download-png");
   const downloadJpgBtn  = document.getElementById("download-jpg");
+  const workspaceErrorEl = document.getElementById("workspace-error");
 
   let currentResultURL = null; // holds the processed image URL for download
   let currentFile = null;      // holds the original File for the API call
@@ -910,12 +913,13 @@
   function validateFile(file){
     if (!file) return "No file selected.";
     if (!ACCEPTED_TYPES.includes(file.type)) return "Please use a PNG, JPG, JPEG, or WEBP file.";
-    if (file.size > MAX_SIZE_BYTES) return "That file is larger than the 20MB limit.";
+    if (file.size > MAX_SIZE_BYTES) return "That file is larger than the 4MB limit.";
     return null;
   }
 
   let errorTimer = null;
   function showError(message){
+    console.error("Cutlyne error:", message);
     errorEl.textContent = message;
     errorEl.classList.remove("sr-only");
     errorEl.classList.add("visible-error");
@@ -923,7 +927,18 @@
     errorTimer = setTimeout(() => {
       errorEl.classList.add("sr-only");
       errorEl.classList.remove("visible-error");
-    }, 5000);
+    }, 9000);
+  }
+
+  function showWorkspaceError(message){
+    console.error("Cutlyne error:", message);
+    workspaceErrorEl.textContent = message;
+    workspaceErrorEl.style.display = "block";
+  }
+
+  function hideWorkspaceError(){
+    workspaceErrorEl.style.display = "none";
+    workspaceErrorEl.textContent = "";
   }
 
   /* ---------------------------------------------------------
@@ -953,6 +968,7 @@
     resultActions.classList.remove("active");
     preActions.classList.remove("hidden");
     statusPill.textContent = "Processing";
+    hideWorkspaceError();
   }
 
   /* ---------------------------------------------------------
@@ -1029,7 +1045,7 @@
       progressWrap.classList.remove("active");
       progressFill.style.width = "0%";
       statusPill.textContent = "Error";
-      showError(err.message || "Something went wrong while processing that image.");
+      showWorkspaceError(err.message || "Something went wrong while processing that image.");
       preActions.classList.remove("hidden");
     });
   }

@@ -11,6 +11,13 @@
 //   3. Redeploy so the function picks up the new variable.
 
 export default async function handler(req, res) {
+  // Visit /api/remove-bg?ping=1 in your browser after deploying to check,
+  // without exposing the key itself, whether Vercel can see it.
+  if (req.method === "GET" && req.query && req.query.ping) {
+    res.status(200).json({ keyConfigured: Boolean(process.env.REMOVE_BG_API_KEY) });
+    return;
+  }
+
   if (req.method !== "POST") {
     res.status(405).json({ error: "Method not allowed. Use POST." });
     return;
@@ -18,7 +25,8 @@ export default async function handler(req, res) {
 
   const apiKey = process.env.REMOVE_BG_API_KEY;
   if (!apiKey) {
-    res.status(500).json({ error: "Server is missing REMOVE_BG_API_KEY. Add it in Vercel project settings." });
+    console.error("REMOVE_BG_API_KEY is not set on this deployment.");
+    res.status(500).json({ error: "Server is missing REMOVE_BG_API_KEY. Add it in Vercel project settings, then redeploy." });
     return;
   }
 
@@ -26,9 +34,22 @@ export default async function handler(req, res) {
     // Read the raw multipart body sent by the browser and pass it
     // straight through to remove.bg with the same Content-Type
     // (including its boundary), just swapping in the real API key.
-    const chunks = [];
-    for await (const chunk of req) chunks.push(chunk);
-    const body = Buffer.concat(chunks);
+    // req.body may already be a Buffer if bodyParser wasn't disabled
+    // for some reason — handle both cases defensively.
+    let body;
+    if (Buffer.isBuffer(req.body)) {
+      body = req.body;
+    } else {
+      const chunks = [];
+      for await (const chunk of req) chunks.push(chunk);
+      body = Buffer.concat(chunks);
+    }
+
+    if (!body || body.length === 0) {
+      console.error("remove-bg: received an empty request body.");
+      res.status(400).json({ error: "No image data was received by the server." });
+      return;
+    }
 
     const upstream = await fetch("https://api.remove.bg/v1.0/removebg", {
       method: "POST",
@@ -45,6 +66,7 @@ export default async function handler(req, res) {
         const errJson = await upstream.json();
         if (errJson.errors && errJson.errors[0]) message = errJson.errors[0].title;
       } catch (e) { /* not JSON, keep statusText */ }
+      console.error("remove.bg rejected the request:", upstream.status, message);
       res.status(upstream.status).json({ error: message });
       return;
     }
@@ -54,6 +76,7 @@ export default async function handler(req, res) {
     res.status(200).send(resultBuffer);
 
   } catch (err) {
+    console.error("remove-bg proxy crashed:", err);
     res.status(500).json({ error: err.message || "Background removal failed." });
   }
 }
