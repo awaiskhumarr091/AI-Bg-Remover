@@ -51,14 +51,35 @@ export default async function handler(req, res) {
       return;
     }
 
-    const upstream = await fetch("https://api.remove.bg/v1.0/removebg", {
-      method: "POST",
-      headers: {
-        "X-Api-Key": apiKey,
-        "Content-Type": req.headers["content-type"] || "multipart/form-data"
-      },
-      body
-    });
+    // Give remove.bg up to 55s to respond (just under the 60s function
+    // limit set below). Without this, a slow/large image can cause Vercel
+    // itself to kill the function and return an HTML timeout page instead
+    // of JSON — which is why the browser was showing a generic
+    // "request failed" message with no real explanation.
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 55000);
+
+    let upstream;
+    try {
+      upstream = await fetch("https://api.remove.bg/v1.0/removebg", {
+        method: "POST",
+        headers: {
+          "X-Api-Key": apiKey,
+          "Content-Type": req.headers["content-type"] || "multipart/form-data"
+        },
+        body,
+        signal: controller.signal
+      });
+    } catch (fetchErr) {
+      if (fetchErr.name === "AbortError") {
+        console.error("remove-bg: upstream request to remove.bg timed out.");
+        res.status(504).json({ error: "The background removal service took too long to respond. Please try again, or try a smaller image." });
+        return;
+      }
+      throw fetchErr;
+    } finally {
+      clearTimeout(timeout);
+    }
 
     if (!upstream.ok) {
       let message = upstream.statusText;
@@ -82,9 +103,14 @@ export default async function handler(req, res) {
 }
 
 // Allow request bodies up to the Vercel plan's limit (Hobby ≈ 4.5MB).
+// maxDuration raises the function's execution time limit (Vercel Hobby
+// defaults to 10s, which is often too short for remove.bg to finish on
+// larger photos — that mismatch is what was causing the generic
+// "background removal request failed" error in the browser).
 export const config = {
   api: {
     bodyParser: false,
     responseLimit: false
-  }
+  },
+  maxDuration: 60
 };
